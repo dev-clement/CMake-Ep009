@@ -1,0 +1,162 @@
+= Organizing your CMake code
+From now on, everything to the project is present inside of one cmake file, but we can split it apart.
+:toc:
+:sectnums:
+
+== Introduction
+In this article, we'll see how we can split a `CMakeLists` file into several targets. And break the code into libraries that will be used by other libraries.
+
+So far, our cmake code is written and present inside of only one single file, so what if we have a bigger project, let say a project with hundred or throusands of dependencies and executables or lines in your `CMakeLists` file.
+
+However, cmake is gives you a way to partition your cmake code into smaller shunks. Those shunks can be included into several CMake files.
+
+== Approach of split
+
+There is two common approaches to split the cmake into smaller shunks:
+
+=== First approach
+The first approach will make use of the `include` command like so:
+```cmake
+include(<file|module> [OPTIONAL] [RESULT_VARIABLE <var>]
+                      [NO_POLICY_SCOPE])
+```
+This approach load and run `CMake` code from a file or a module.
+
+Loads and runs CMake code from the file given. Variable reads and writes access the scope of the caller (dynamic scoping). In case of `OPTIONAL` is present, then no error is raised if the file doesn't exists. In case of the `RESULT_VARIABLE` is given the cariable `<var>` will be set to the full filename which had been included or `NOTFOUND` if it failed.
+
+If a module is specified instead of a file, the file with name `<modulename>.cmake` is searched fiest in `CMAKE_MODULE_PATH`, then in the `CMake` module directory. There is one exception to this, if the file which calls `include()` is located itself in the CMake builtin module directory, then first the CMake, builtin module directory is searched and `CMAKE_MODULE_PATH` afterwards.
+
+=== Second approach
+The second approach will make use of the `add_subdirectory` command like so:
+```cmake
+add_subdirectory(source_dir [BINARY_DIR] [EXCLUDE_FROM_ALL] [SYSTEM])
+```
+==== Handling source_dir
+This command adds a subdirectory to the build. The `source_dir` soecifies the diretory in which the source `CMakeLists.txt` and code files are located. If it is a relative path, it will be evaluated with respect to the current directory (the typical usage).
+
+==== Handling the BINARY_DIR
+But it may also be an absolute path. The `BINARY_DIR` specifies the directory in which to place the output files, if it is a relative path it will be evaluated with respect to the current output directory, but it may also be an absolute path.
+
+If `BINARY_DIR` isn't specified, the value of `source_dir`, before expanding any relative path, will be used (the typical usage). The `CMakeLists.txt` file in the specified source directory will be processed immediately by CMake before processing in the current input file continues beyons this command.
+
+==== Handling the EXCLUDE_FROM_ALL
+If the `EXCLUDE_FROM_ALL` argument is provided then the `EXCLUDE_FROM_ALL` property will be set on the added directory. This will exclude the directory from a default vuild. See the directory property `EXCLUDE_FROM_ALL`.
+
+===== EXCLUDE_FROM_ALL details
+Set this directory property to a true value on a subdirectory to exclude its target from the 'all' target of its ancestor. If excluded, running `make` in the parent directory will not build targets in a subdirectory by default. This does not affect the "all" target of the subdirectory itself. Running `make` inside the subdirectory will still build its target.
+
+===== EXCLUDE_FROM_ALL meaning
+The `EXCLUDE_FROM_ALL` meant for when the subdirectory contains a separate part of the project that is useful, but not necessary such as a set of examples, e.g an integrated 3rd party library. Typically the subdirectory should contain its own `project` command invocation so that a full build system will be generated in the subdirectory. Note that inter-target dependencies supersede this exclusion. If a target built by the parent project depends on a target in the subdirectory, the dependee target will be included in the parent project build sysstem to satisfy the dependency.
+
+=== How do we setup the binary after split
+We will make one main `CMakeLists.txt` file that will contain the main of the application.
+
+Taking the application we did in the episode _8_, we will took the `math` and `stats` libraries, as the `stats` one will depends on the `math` library.
+
+==== Main CMakeLists
+The first `CMakeLists.txt` file will contains the `rooster` binary, and will contain dependencies to some other libraries that are leaving in separate files.
+
+===== Scripts
+There will then be some cmake scripts, where their jobs will be to contain, logic for the `math` library, we'll then be have another script whose job will be to contain the logic for the `stats` libraries that depends on the `math` one.
+
+==== Folder structure
+In order to do what we wrote above, the folder structure will be something like this:
+
+* There will be the root of our project, this root project will contains a `build` directory that will contain everything related to the cmake build, this way there won't be any junks into our source folders.
+* There will be a `source` folder, that in turns will contains a `math` folder and a `stats` folder, and we'll make the main `CMakeLists` file at the level of the root folders here.
+* Each folder that will be present in the `src` folder will have its own `CMakeLists` file which has the purpose of containing the logic of the libraries inside of the `src` folder.
+
+==== Stats scripts
+The `cmake` scripts will be files with a `cmake` extension, for example for the `statistics` library, we'll have something like this:
+
+```cmake
+# The stats library
+set(TARGET_STATS_LIBRARY libstats)
+add_library(${TARGET_STATS_LIBRARY} STATIC stats/stats.cpp)
+target_include_directories(${TARGET_STATS_LIBRARY} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/stats/include)
+target_include_libraries(${TARGET_STATS_LIBRARY} PRIVATE libmath)
+```
+
+==== Math script
+The `cmake` scripts will be files with suffix with the `.cmake` extension:
+
+```cmake
+# The math library
+set(TARGET_MATH_LIBRARY libmath)
+add_library(${TARGET_MATH_LIBRARY} STATIC src/math/supermath.cpp)
+target_include_directories(${TARGET_MATH_LIBRARY} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/maths/include)
+```
+
+==== Main script
+The `cmake` file that is going to use the `include` command to includes the both scripts described above will be more lit than before:
+
+```cmake
+cmake_minimum_required(VERSIO 3.20)
+
+project(rooster)
+
+# the math library
+include(maths/maths.cmake)
+
+# The stats library
+include(stats/stats.cmake)
+
+# The executable target
+add_executable(rooster main/main.cpp)
+target_link_libraries(rooster PUBLIC libstats)
+```
+
+Those file with a `cmake` extension meant to be included by other cmake files. 
+
+==== Including inside of a `cmake` script
+The include of the `cmake` script is a bit confusing at first, but, we should know that we set up the path relative to the folders that contains the top `CMakeLists.txt` file.
+
+Inside of the scripts, we do all the inclusion relative to the main `CMakeLists.txt` file is into.
+
+==== What the include command is doing
+What the `include` command will do to your application is just copying the content of your `cmake` scripts into the main `CMakeLists.txt` file.
+
+When you call the `include` command, cmake is just going to copy-paste the code you will include to your CMake you include to.
+
+That means, that you have to setting up things to the percpective of the `CMakeLists.txt` file.
+
+==== Awareness
+
+When you are using the `include` command, you'll polute the global scope of the `CMakeLists.txt`, if you setup a variable in a `cmake` script, once copied using the `include` command, it will act as you make it in the main `CMakeLists`file you are including into.
+
+Using the `include` command makes the cmake code hard to reason about.
+
+=== Using the add_subdirectory
+In the text above, we use the `include` command to split the code appart, we know the pros and the cons, one of the cons is that the `include` command will just include the scripts inside of where we include it.
+
+The problem is that is:
+
+. First of all the scope of the inclusion being part of the `CMakeLists` that where it is included
+. Second is the fact that all of the path will depends on the `CMakeLists` father where the script gets included in.
+
+==== Another way of inclusion
+In order to avoid all the drawback written above, we could make use of the `add_subdirectory` command instead of `include`.
+
+```cmake
+add_subdirectory(source_dir [BINARY_DIR] [EXCUDE_FROM_ALL] [SYSTEM])
+```
+
+==== Using add_subdirectory
+The command written above adds a subdirectory to the build (`CMakeFile` parent). 
+
+The `source_dir` specifies the directory in which the source `CMakeLists.txt` and code files are located. 
+
+If it is a relative path, it will be evaluated with respect to the current directory (the typical usage), but it may also be an absolute path. 
+
+==== BINARY_DIR option
+The `BINARY_DIR` specifies the directory in which to place the output files. If it is a relative path, it will be evaluated with respect to the current output directory, but it may also be an absolute path. 
+
+If `BINARY_DIR` is not specified, the value of `source_dir`, before expanding any relative path, will be used (the typical usage).
+
+The `CMakeLists.txt` file in the specified source directory will be processed immediately by CMake before processing in the current input file continues beyond this command.
+
+==== EXCLUDE_ALL option
+
+If the `EXCLUDE_ALL` argument is provided then the `EXCLUDE_FROM_ALL` property will be set on the added directory.
+
+This will exclude the directory from the default build.
